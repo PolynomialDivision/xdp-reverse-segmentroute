@@ -115,6 +115,8 @@ int xdp_srv6_func(struct xdp_md *ctx) {
 
   // ToDo: Write reversed into hashmap
 
+  // Probably we can then use bpf_lwt_push_encap to push a srv6 header back to the package (but not here in the reverser)
+
   // "Orig" IPv6 Header
   struct ipv6hdr *ipv6_orig_header =
       (struct ipv6hdr *)(((void *)ip6_hdr) + ipv6_optlen(ip6_hdr));
