@@ -8,6 +8,61 @@
 
 #define ipv6_optlen(p) (((p)->hdrlen + 1) << 3)
 
+#define IPV6_RTHDR_TYPE_0	0	/* IPv6 Routing header type 0.  */
+
+/* Routing header */
+struct ip6_rthdr {
+  uint8_t ip6r_nxt;     /* next header */
+  uint8_t ip6r_len;     /* length in units of 8 octets */
+  uint8_t ip6r_type;    /* routing type */
+  uint8_t ip6r_segleft; /* segments left */
+  /* followed by routing type specific data */
+};
+
+/* Type 0 Routing header */
+struct ip6_rthdr0 {
+  uint8_t ip6r0_nxt;      /* next header */
+  uint8_t ip6r0_len;      /* length in units of 8 octets */
+  uint8_t ip6r0_type;     /* always zero */
+  uint8_t ip6r0_segleft;  /* segments left */
+  uint8_t ip6r0_reserved; /* reserved field */
+  uint8_t ip6r0_slmap[3]; /* strict/loose bit map */
+  /* followed by up to 127 struct in6_addr */
+  struct in6_addr ip6r0_addr[0];
+};
+
+/* Copied from glibc! Change to normal linux IPv6 header definitions! */
+static inline int inet6_rth_reverse(const void *in, void *out) {
+  struct ip6_rthdr *in_rthdr = (struct ip6_rthdr *)in;
+
+  switch (in_rthdr->ip6r_type) {
+    struct ip6_rthdr0 *in_rthdr0;
+    struct ip6_rthdr0 *out_rthdr0;
+  case IPV6_RTHDR_TYPE_0:
+    in_rthdr0 = (struct ip6_rthdr0 *)in;
+    out_rthdr0 = (struct ip6_rthdr0 *)out;
+
+    /* Copy header, not the addresses.  The memory regions can overlap.  */
+    __builtin_memmove(out_rthdr0, in_rthdr0, sizeof(struct ip6_rthdr0));
+
+    int total = in_rthdr0->ip6r0_len * 8 / sizeof(struct in6_addr);
+    for (int i = 0; i < total / 2; ++i) {
+      /* Remember, IN_RTHDR0 and OUT_RTHDR0 might overlap.  */
+      struct in6_addr temp = in_rthdr0->ip6r0_addr[i];
+      out_rthdr0->ip6r0_addr[i] = in_rthdr0->ip6r0_addr[total - 1 - i];
+      out_rthdr0->ip6r0_addr[total - 1 - i] = temp;
+    }
+    if (total % 2 != 0 && in != out)
+      out_rthdr0->ip6r0_addr[total / 2] = in_rthdr0->ip6r0_addr[total / 2];
+
+    out_rthdr0->ip6r0_segleft = total;
+
+    return 0;
+  }
+
+  return -1;
+}
+
 struct bpf_map_def SEC("maps") segmentrouting = {
     .type = BPF_MAP_TYPE_HASH,
     .key_size = sizeof(struct in6_addr),
